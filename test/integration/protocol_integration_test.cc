@@ -824,6 +824,32 @@ TEST_P(ProtocolIntegrationTest, Retry) {
       BytesCountExpectation(2204, 520, 150, 6));
 }
 
+TEST_P(ProtocolIntegrationTest, RetryWithBuffer) {
+  config_helper_.prependFilter(R"EOF(
+  name: add-body-filter
+  typed_config:
+      "@type": type.googleapis.com/test.integration.filters.AddBodyFilterConfig
+      where_to_add_body: DECODE_HEADERS
+      body_size: 200
+  )EOF");
+  initialize();
+  codec_client_ = makeHttpConnection(lookupPort("http"));
+  auto response = codec_client_->makeHeaderOnlyRequest(Http::TestRequestHeaderMapImpl{
+      {":method", "POST"},
+      {":path", "/test/long/url"},
+      {":scheme", "http"},
+      {":authority", "sni.lyft.com"},
+      {"x-forwarded-for", "10.0.0.1"},
+      //{"x-envoy-retry-on", "5xx"}
+  });
+  waitForNextUpstreamRequest();
+  EXPECT_TRUE(upstream_request_->complete());
+  EXPECT_TRUE(upstream_request_->receivedData());
+  EXPECT_EQ(upstream_request_->bodyLength(), 200);
+  upstream_request_->encodeHeaders(default_response_headers_, true);
+  ASSERT_TRUE(response->waitForEndStream());
+}
+
 TEST_P(ProtocolIntegrationTest, RetryStreaming) {
   initialize();
   codec_client_ = makeHttpConnection(lookupPort("http"));
